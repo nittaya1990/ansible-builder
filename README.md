@@ -1,3 +1,6 @@
+[![CI](https://github.com/ansible/ansible-builder/actions/workflows/ci.yml/badge.svg?branch=devel)](https://github.com/ansible/ansible-builder/actions?query=branch%3Adevel)
+[![codecov](https://codecov.io/gh/ansible/ansible-builder/branch/devel/graph/badge.svg?token=4F6P3DBI40)](https://codecov.io/gh/ansible/ansible-builder)
+
 # Ansible Builder
 
 Ansible Builder is a tool that automates the process of building execution
@@ -22,7 +25,7 @@ https://ansible-builder.readthedocs.io/en/latest/
   check out the [Ansible Mailing
   lists](https://docs.ansible.com/ansible/latest/community/communication.html#mailing-list-information)
   page of the official Ansible documentation
-  
+
 ## Code of Conduct
 
 We ask all of our community members and contributors to adhere to the [Ansible

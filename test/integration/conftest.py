@@ -1,11 +1,10 @@
+import logging
 import os
+import re
 import subprocess
-
-import tempfile
 import uuid
 
 import pytest
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -14,14 +13,14 @@ KEEP_IMAGES = bool(os.environ.get('KEEP_IMAGES', False))
 
 
 @pytest.fixture
-def build_dir_and_ee_yml():
+def build_dir_and_ee_yml(tmp_path):
     """Fixture to return temporary file maker."""
 
     def tmp_dir_and_file(ee_contents):
-        tmpdir = tempfile.mkdtemp(prefix="ansible-builder-test-")
-        with tempfile.NamedTemporaryFile(delete=False, dir=tmpdir) as tempf:
-            tempf.write(bytes(ee_contents, "UTF-8"))
-        return tmpdir, tempf.name
+        tmp_file = tmp_path / 'ee.txt'
+        tmp_file.write_text(ee_contents)
+
+        return tmp_path, tmp_file
 
     return tmp_dir_and_file
 
@@ -73,31 +72,27 @@ def gen_image_name(request):
     ])
 
 
-def delete_image(container_runtime, image_name):
+@pytest.mark.test_all_runtimes
+def delete_image(runtime, image_name):
     if KEEP_IMAGES:
         return
     # delete given image, if the test happened to make one
     # allow error in case that image was not created
-    r = run(f'{container_runtime} rmi -f {image_name}', allow_error=True)
+    regexp = re.compile(r'(no such image)|(image not known)|(image is in use by a container)', re.IGNORECASE)
+    r = run(f'{runtime} rmi -f {image_name}', allow_error=True)
     if r.rc != 0:
-        if 'no such image' in r.stdout or 'no such image' in r.stderr or 'image not known' in r.stdout or 'image not known' in r.stderr:
+        if regexp.search(r.stdout) or regexp.search(r.stderr):
             return
         else:
             raise Exception(f'Teardown failed (rc={r.rc}):\n{r.stdout}\n{r.stderr}')
 
 
-@pytest.fixture()
-def ee_tag(request, container_runtime):
+@pytest.fixture
+@pytest.mark.test_all_runtimes
+def ee_tag(request, runtime):
     image_name = gen_image_name(request)
     yield image_name
-    delete_image(container_runtime, image_name)
-
-
-@pytest.fixture(scope='class')
-def ee_tag_class(request, container_runtime):
-    image_name = gen_image_name(request)
-    yield image_name
-    delete_image(container_runtime, image_name)
+    delete_image(runtime, image_name)
 
 
 class CompletedProcessProxy(object):
@@ -108,19 +103,6 @@ class CompletedProcessProxy(object):
         return getattr(self.result, attr)
 
 
-@pytest.fixture()
+@pytest.fixture
 def cli():
     return run
-
-
-@pytest.fixture(scope='class')
-def cli_class():
-    return run
-
-
-@pytest.fixture(params=['docker', 'podman'], ids=['docker', 'podman'], scope='session')
-def container_runtime(request):
-    if run(f'{request.param} --version', check=False).returncode == 0:
-        return request.param
-    else:
-        pytest.skip(f'{request.param} runtime not available')

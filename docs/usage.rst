@@ -5,11 +5,11 @@ Once you have created a :ref:`definition<Definition:Execution Environment Defini
 your Execution Environment.
 
 
-Container ``build`` command
----------------------------
+The ``build`` command
+---------------------
 
-The ``ansible-builder container build`` command (or ``ansible-builder build``, for short)
-takes an execution environment definition as an input. It outputs the build context necessary for
+The ``ansible-builder build`` command takes an execution environment definition
+as an input. It outputs the build context necessary for
 building an execution environment image, and it builds that image. The
 image can be re-built with the build context elsewhere, and give the
 same result. By default, it looks for a file named ``execution-environment.yml``
@@ -39,7 +39,7 @@ To build an Execution Environment using the files above, run:
 
 .. code::
 
-   $ ansible-builder container build
+   $ ansible-builder build
    ...
    STEP 7: COMMIT my-awx-ee
    --> 09c930f5f6a
@@ -57,8 +57,13 @@ To customize the tagged name applied to the built image:
 
 .. code::
 
-   $ ansible-builder container build --tag=my-custom-ee
+   $ ansible-builder build --tag=my-custom-ee
 
+More recent versions of ``ansible-builder`` support multiple tags:
+
+.. code::
+
+   $ ansible-builder build --tag=tag1 --tag=tag2
 
 ``--file``
 **********
@@ -68,7 +73,47 @@ To use a definition file named something other than
 
 .. code::
 
-   $ ansible-builder container build --file=my-ee.yml
+   $ ansible-builder build --file=my-ee.yml
+
+``--galaxy-keyring``
+********************
+
+With more recent versions of Ansible, it is possible to have the ``ansible-galaxy``
+utility verify collection signatures during installation. This requires a keyring to
+be provided (can be built with GnuPG tooling) to use during verification. Provide
+the path to this keyring with the ``--galaxy-keyring`` option. If this option is not
+supplied, no signature verification will be performed. If it is provided, and the
+version of Ansible is not recent enough to support this feature, an error will
+occur during the image build process.
+
+.. code::
+
+   $ ansible-builder create --galaxy-keyring=/path/to/pubring.kbx
+   $ ansible-builder build --galaxy-keyring=/path/to/pubring.kbx
+
+``--galaxy-ignore-signature-status-code``
+*****************************************
+
+With ``--galaxy-keyring`` set it is possible to ignore certain errors that may occur while verifying collections.
+It is passed unmodified to ``ansible-galaxy`` calls via the option ``--ignore-signature-status-code``.
+See the ``ansible-galaxy`` documentation for more information.
+
+.. code::
+
+   $ ansible-builder create --galaxy-keyring=/path/to/pubring.kbx --galaxy-ignore-signature-status-code 500
+   $ ansible-builder build --galaxy-keyring=/path/to/pubring.kbx --galaxy-ignore-signature-status-code 500
+
+``--galaxy-required-valid-signature-count``
+*******************************************
+
+When ``--galaxy-keyring`` is set, the number of required valid collection signatures can be overridden. 
+The value is passed unmodified to ``ansible-galaxy`` calls via the option ``--required-valid-signature-count``.
+See the ``ansible-galaxy`` documentation for more information.
+
+.. code::
+
+   $ ansible-builder create --galaxy-keyring=/path/to/pubring.kbx --galaxy-required-valid-signature-count 3
+   $ ansible-builder build --galaxy-keyring=/path/to/pubring.kbx --galaxy-required-valid-signature-count 3
 
 
 ``--context``
@@ -79,7 +124,7 @@ directory. To specify another location:
 
 .. code::
 
-   $ ansible-builder container build --context=/path/to/dir
+   $ ansible-builder build --context=/path/to/dir
 
 
 ``--build-arg``
@@ -91,13 +136,13 @@ By default, the Containerfile / Dockerfile outputted by Ansible Builder contains
 
 .. code::
 
-   $ ansible-builder container build --build-arg FOO=bar
+   $ ansible-builder build --build-arg FOO=bar
 
 To use a custom base image:
 
 .. code::
 
-   $ ansible-builder container build --build-arg EE_BASE_IMAGE=registry.example.com/another-ee
+   $ ansible-builder build --build-arg EE_BASE_IMAGE=registry.example.com/another-ee
 
 
 ``--container-runtime``
@@ -107,7 +152,7 @@ Podman is used by default to build images. To use Docker:
 
 .. code::
 
-   $ ansible-builder container build --container-runtime=docker
+   $ ansible-builder build --container-runtime=docker
 
 
 ``--verbosity``
@@ -117,14 +162,29 @@ To customize the level of verbosity:
 
 .. code::
 
-   $ ansible-builder container build --verbosity 2
+   $ ansible-builder build --verbosity 2
 
 
-Container ``create`` command
-----------------------------
+``--prune-images``
+******************
 
-The ``ansible-builder container create`` command (or ``ansible-builder create``, for short)
-works similarly to the ``build`` command in that it takes an execution environment definition as an input
+To remove unused images created after the build process:
+
+.. code::
+
+   $ ansible-builder build --prune-images
+
+.. note::
+
+   This flag essentially removes all the dangling images on the given machine whether they
+   already exists or created by ansible-builder build process.
+
+
+The ``create`` command
+----------------------
+
+The ``ansible-builder create`` command works similarly to the ``build`` command
+in that it takes an execution environment definition as an input
 and outputs the build context necessary for building an execution environment
 image. However, the ``create`` command *will not* build the execution environment
 image; this is useful for creating just the build context and a ``Containerfile``

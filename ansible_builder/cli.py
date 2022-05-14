@@ -22,43 +22,42 @@ def run():
     args = parse_args()
     configure_logger(args.verbosity)
 
-    if args.command_type == 'container':
-        if args.action in ['create', 'build']:
-            ab = AnsibleBuilder(**vars(args))
-            action = getattr(ab, ab.action)
-            try:
-                if action():
-                    print(
-                        MessageColors.OKGREEN + "Complete! The build context can be found at: {0}".format(
-                            os.path.abspath(ab.build_context)
-                        ) + MessageColors.ENDC)
-                    sys.exit(0)
-            except DefinitionError as e:
-                logger.error(e.args[0])
-                sys.exit(1)
+    if args.action in ['create', 'build']:
+        ab = AnsibleBuilder(**vars(args))
+        action = getattr(ab, ab.action)
+        try:
+            if action():
+                print(
+                    MessageColors.OKGREEN + "Complete! The build context can be found at: {0}".format(
+                        os.path.abspath(ab.build_context)
+                    ) + MessageColors.ENDC)
+                sys.exit(0)
+        except DefinitionError as e:
+            logger.error(e.args[0])
+            sys.exit(1)
 
-        elif args.action == 'introspect':
-            data = process(args.folder, user_pip=args.user_pip, user_bindep=args.user_bindep)
-            if args.sanitize:
-                logger.info('# Sanitized dependencies for {0}'.format(args.folder))
-                data_for_write = data
-                data['python'] = sanitize_requirements(data['python'])
-                data['system'] = simple_combine(data['system'])
-            else:
-                logger.info('# Dependency data for {0}'.format(args.folder))
-                data_for_write = data.copy()
-                data_for_write['python'] = simple_combine(data['python'])
-                data_for_write['system'] = simple_combine(data['system'])
+    elif args.action == 'introspect':
+        data = process(args.folder, user_pip=args.user_pip, user_bindep=args.user_bindep)
+        if args.sanitize:
+            logger.info('# Sanitized dependencies for {0}'.format(args.folder))
+            data_for_write = data
+            data['python'] = sanitize_requirements(data['python'])
+            data['system'] = simple_combine(data['system'])
+        else:
+            logger.info('# Dependency data for {0}'.format(args.folder))
+            data_for_write = data.copy()
+            data_for_write['python'] = simple_combine(data['python'])
+            data_for_write['system'] = simple_combine(data['system'])
 
-            print('---')
-            print(yaml.dump(data, default_flow_style=False))
+        print('---')
+        print(yaml.dump(data, default_flow_style=False))
 
-            if args.write_pip and data.get('python'):
-                write_file(args.write_pip, data_for_write.get('python') + [''])
-            if args.write_bindep and data.get('system'):
-                write_file(args.write_bindep, data_for_write.get('system') + [''])
+        if args.write_pip and data.get('python'):
+            write_file(args.write_pip, data_for_write.get('python') + [''])
+        if args.write_bindep and data.get('system'):
+            write_file(args.write_bindep, data_for_write.get('system') + [''])
 
-            sys.exit(0)
+        sys.exit(0)
 
     logger.error("An error has occured.")
     sys.exit(1)
@@ -66,17 +65,6 @@ def run():
 
 def get_version():
     return pkg_resources.get_distribution('ansible_builder').version
-
-
-def set_default_command_type(args):
-    """
-    For backward compatibility of the CLI, if no command type is supplied, assume 'container'.
-    """
-    if not len(args):
-        return
-
-    if args[0] not in ('-h', '--help', '--version') and 'container' not in args:
-        args.insert(0, 'container')
 
 
 def add_container_options(parser):
@@ -104,10 +92,15 @@ def add_container_options(parser):
         )
     )
 
+    # Because of the way argparse works, if we specify the default here, it would
+    # always be included in the value list if a tag value was supplied. We don't want
+    # that, so we must, instead, set the default AFTER the argparse.parse_args() call.
+    # See https://bugs.python.org/issue16399 for more info.
     build_command_parser.add_argument(
         '-t', '--tag',
-        default=constants.default_tag,
-        help='The name for the container image being built (default: %(default)s)')
+        action='extend',
+        nargs='+',
+        help=f'The name(s) for the container image being built (default: {constants.default_tag})')
 
     build_command_parser.add_argument(
         '--container-runtime',
@@ -123,6 +116,18 @@ def add_container_options(parser):
         help='Build-time variables to pass to any podman or docker calls. '
              'Internally ansible-builder makes use of {0}.'.format(
              ', '.join(constants.build_arg_defaults.keys())))
+
+    build_command_parser.add_argument(
+        '--no-cache',
+        action='store_true',
+        help='Do not use cache when building the image',
+    )
+
+    build_command_parser.add_argument(
+        '--prune-images',
+        action='store_true',
+        help='Remove all dangling images after building the image',
+    )
 
     for p in [create_command_parser, build_command_parser]:
 
@@ -144,6 +149,17 @@ def add_container_options(parser):
                                 ' and '.join([' for '.join([v, k]) for k, v in constants.runtime_files.items()]))
                        )
 
+        p.add_argument('--galaxy-keyring',
+                       help='Keyring for collection signature verification during installs from Galaxy. '
+                            'Will be copied into images. Verification is disabled if unset.')
+        p.add_argument('--galaxy-ignore-signature-status-codes',
+                       action="append",
+                       help='A gpg status code to ignore during signature verification when installing with '
+                       'ansible-galaxy. May be specified multiple times. See ansible-galaxy doc for more info.')
+        p.add_argument('--galaxy-required-valid-signature-count',
+                       help='The number of signatures that must successfully verify collections from '
+                       'ansible-galaxy ~if there are any signatures provided~. See ansible-galaxy doc for more info.')
+
     introspect_parser = parser.add_parser(
         'introspect',
         help='Introspects collections in folder.',
@@ -157,6 +173,7 @@ def add_container_options(parser):
                                    help=('Sanitize and de-duplicate requirements. '
                                          'This is normally done separately from the introspect script, but this '
                                          'option is given to more accurately test collection content.'))
+
     introspect_parser.add_argument(
         'folder', default=base_collections_path, nargs='?',
         help=(
@@ -198,8 +215,6 @@ def add_container_options(parser):
 
 def parse_args(args=sys.argv[1:]):
 
-    set_default_command_type(args)
-
     parser = argparse.ArgumentParser(
         prog='ansible-builder',
         description=(
@@ -212,16 +227,17 @@ def parse_args(args=sys.argv[1:]):
         help='Print ansible-builder version and exit.'
     )
 
-    type_parser = parser.add_subparsers(dest='command_type')
-    type_parser.required = True
+    subparsers = parser.add_subparsers(help='The command to invoke.', dest='action')
+    subparsers.required = True
 
-    # container commands
-    container = type_parser.add_parser('container', help='Container specific commands')
-    container_parser = container.add_subparsers(metavar='CONTAINER_ACTION', dest='action')
-    container_parser.required = True
-    add_container_options(container_parser)
+    add_container_options(subparsers)
 
     args = parser.parse_args(args)
+
+    # Tag default must be handled differently. See comment for --tag option.
+    if 'tag' not in vars(args):
+        args.tag = [constants.default_tag]
+
     return args
 
 
